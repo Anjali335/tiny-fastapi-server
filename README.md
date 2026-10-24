@@ -18,7 +18,7 @@ A clean, production-ready REST API starter server built with **FastAPI** and **U
 
 ### 1. Clone & Navigate
 ```bash
-git clone https://github.com/<your-username>/<your-repo-name>.git
+git clone https://github.com/Anjali335/tiny-fastapi-server.git
 cd tiny-fastapi-server
 ```
 
