@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Chat Privacy Lock</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    body {
+      width: 340px;
+      background: #0f172a;
+      color: #f1f5f9;
+      padding: 16px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid #1e293b;
+      margin-bottom: 14px;
+    }
+    .header-icon {
+      font-size: 20px;
+      background: rgba(99, 102, 241, 0.15);
+      padding: 6px 10px;
+      border-radius: 8px;
+    }
+    .header-title {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+    .card-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #94a3b8;
+      margin-bottom: 8px;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      margin-bottom: 10px;
+    }
+    .badge-locked {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .badge-unlocked {
+      background: rgba(34, 197, 94, 0.15);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+    .badge-none {
+      background: rgba(148, 163, 184, 0.15);
+      color: #94a3b8;
+    }
+    .chat-id-text {
+      font-family: monospace;
+      font-size: 11px;
+      color: #cbd5e1;
+      word-break: break-all;
+      background: #0f172a;
+      padding: 6px 8px;
+      border-radius: 6px;
+      margin-bottom: 10px;
+    }
+    input[type="password"], input[type="text"] {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: #fff;
+      font-size: 13px;
+      margin-bottom: 8px;
+      outline: none;
+    }
+    input:focus {
+      border-color: #6366f1;
+    }
+    button {
+      width: 100%;
+      padding: 9px 12px;
+      border-radius: 8px;
+      border: none;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-primary {
+      background: #4f46e5;
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background: #4338ca;
+    }
+    .btn-danger {
+      background: #dc2626;
+      color: #fff;
+    }
+    .btn-danger:hover {
+      background: #b91c1c;
+    }
+    .btn-secondary {
+      background: #334155;
+      color: #e2e8f0;
+      margin-top: 6px;
+    }
+    .btn-secondary:hover {
+      background: #475569;
+    }
+    .message {
+      font-size: 11px;
+      margin-top: 6px;
+      min-height: 14px;
+    }
+    .msg-success { color: #4ade80; }
+    .msg-error { color: #f87171; }
+    .locked-list {
+      max-height: 120px;
+      overflow-y: auto;
+      margin-top: 8px;
+    }
+    .locked-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 8px;
+      background: #0f172a;
+      border-radius: 6px;
+      margin-bottom: 4px;
+      font-size: 11px;
+      font-family: monospace;
+    }
+    .delete-btn {
+      width: auto;
+      background: transparent;
+      color: #ef4444;
+      padding: 2px 6px;
+      font-size: 12px;
+    }
+    .delete-btn:hover {
+      color: #f87171;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-icon">🔒</div>
+    <div>
+      <div class="header-title">AI Chat Privacy Lock</div>
+    </div>
+  </div>
+
+  <!-- Master PIN Configuration Section -->
+  <div class="card" id="pin-section">
+    <div class="card-title">Security PIN Setup</div>
+    <div id="pin-setup-form">
+      <input type="password" id="new-pin" placeholder="Enter new 4-8 digit PIN" maxlength="8" />
+      <input type="password" id="confirm-pin" placeholder="Confirm PIN" maxlength="8" />
+      <button class="btn-primary" id="save-pin-btn">Set Master PIN</button>
+      <div id="pin-msg" class="message"></div>
+    </div>
+    <div id="pin-configured-view" style="display: none;">
+      <div class="status-badge badge-unlocked">✓ Master PIN Active</div>
+      <button class="btn-secondary" id="change-pin-toggle-btn">Change PIN</button>
+    </div>
+  </div>
+
+  <!-- Current Active Tab Action -->
+  <div class="card">
+    <div class="card-title">Current Conversation</div>
+    <div id="current-chat-view">
+      <div id="current-chat-status" class="status-badge badge-none">Detecting tab...</div>
+      <div id="current-chat-id" class="chat-id-text">No active AI chat open</div>
+      <button id="toggle-lock-btn" class="btn-primary" style="display: none;">🔒 Lock This Chat</button>
+      <div id="action-msg" class="message"></div>
+    </div>
+  </div>
+
+  <!-- Locked Conversations Management -->
+  <div class="card">
+    <div class="card-title">Locked Conversations (<span id="locked-count">0</span>)</div>
+    <div id="locked-list" class="locked-list">
+      <div style="font-size: 11px; color: #64748b; padding: 4px;">No locked chats yet.</div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
