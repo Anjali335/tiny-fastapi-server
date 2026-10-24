@@ -1,10 +1,10 @@
 /**
  * AI Chat Privacy Lock - Popup Script
- * Handles PIN setup, active chat detection, and lock management.
+ * Handles PIN setup, active tab detection, friendly chat titles,
+ * lock toggle with PIN verification, and real-time messaging.
  */
 
 document.addEventListener("DOMContentLoaded", async () => {
-  // Elements
   const pinSetupForm = document.getElementById("pin-setup-form");
   const pinConfiguredView = document.getElementById("pin-configured-view");
   const newPinInput = document.getElementById("new-pin");
@@ -14,16 +14,24 @@ document.addEventListener("DOMContentLoaded", async () => {
   const pinMsg = document.getElementById("pin-msg");
 
   const currentChatStatus = document.getElementById("current-chat-status");
+  const currentChatTitleEl = document.getElementById("current-chat-title");
   const currentChatIdEl = document.getElementById("current-chat-id");
   const toggleLockBtn = document.getElementById("toggle-lock-btn");
   const actionMsg = document.getElementById("action-msg");
+
+  const verifyBox = document.getElementById("verify-box");
+  const verifyPinInput = document.getElementById("verify-pin-input");
+  const confirmUnlockBtn = document.getElementById("confirm-unlock-btn");
+  const cancelUnlockBtn = document.getElementById("cancel-unlock-btn");
 
   const lockedCountEl = document.getElementById("locked-count");
   const lockedListEl = document.getElementById("locked-list");
 
   let currentChatId = null;
+  let currentChatTitle = null;
+  let activeTabId = null;
+  let pendingUnlockTargetId = null;
 
-  // Crypto helpers
   function generateSalt() {
     const array = new Uint8Array(16);
     crypto.getRandomValues(array);
@@ -38,7 +46,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
   }
 
-  // 1. PIN Management
   async function refreshPinState() {
     const { pinHash } = await chrome.storage.local.get("pinHash");
     if (pinHash) {
@@ -79,7 +86,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     savePinBtn.textContent = "Update PIN";
   });
 
-  // 2. Active Tab Detection
   function extractChatIdFromUrl(urlString) {
     try {
       const url = new URL(urlString);
@@ -112,18 +118,44 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
+    activeTabId = tab.id;
     const chatId = extractChatIdFromUrl(tab.url);
     currentChatId = chatId;
 
     if (!chatId) {
       currentChatStatus.className = "status-badge badge-none";
       currentChatStatus.textContent = "No supported chat detected";
+      currentChatTitleEl.style.display = "none";
       currentChatIdEl.textContent = "Open a specific chat on ChatGPT, Claude, or Gemini";
       toggleLockBtn.style.display = "none";
       return;
     }
 
+    // Try finding human-readable title
+    let titleCandidate = null;
+    if (tab.title) {
+      const clean = tab.title
+        .replace(/ - (Gemini|ChatGPT|Claude)$/i, "")
+        .replace(/Gemini - /i, "")
+        .replace(/ChatGPT - /i, "")
+        .trim();
+      if (clean && !["Gemini", "ChatGPT", "Claude", "New chat"].includes(clean)) {
+        titleCandidate = clean;
+      }
+    }
+
+    try {
+      const res = await chrome.tabs.sendMessage(tab.id, { type: "GET_CHAT_TITLE", chatId });
+      if (res && res.title) titleCandidate = res.title;
+    } catch {}
+
+    const { lockedChatTitles = {} } = await chrome.storage.local.get("lockedChatTitles");
+    currentChatTitle = titleCandidate || lockedChatTitles[chatId] || "Conversation";
+
+    currentChatTitleEl.textContent = currentChatTitle;
+    currentChatTitleEl.style.display = "block";
     currentChatIdEl.textContent = chatId;
+
     await updateLockBtnState();
   }
 
@@ -154,26 +186,89 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    const { lockedChats = [] } = await chrome.storage.local.get("lockedChats");
-    const index = lockedChats.indexOf(currentChatId);
+    const { lockedChats = [], lockedChatTitles = {} } = await chrome.storage.local.get([
+      "lockedChats",
+      "lockedChatTitles",
+    ]);
+    const isLocked = lockedChats.includes(currentChatId);
 
-    let updated;
-    if (index > -1) {
-      updated = lockedChats.filter((id) => id !== currentChatId);
-      showMsg(actionMsg, "Chat unlocked and removed from lock list.", false);
+    if (isLocked) {
+      pendingUnlockTargetId = currentChatId;
+      verifyBox.style.display = "block";
+      verifyPinInput.value = "";
+      verifyPinInput.focus();
     } else {
-      updated = [...lockedChats, currentChatId];
-      showMsg(actionMsg, "Chat privacy-locked successfully!", false);
-    }
+      const updated = [...lockedChats, currentChatId];
+      if (currentChatTitle) {
+        lockedChatTitles[currentChatId] = currentChatTitle;
+      }
+      await chrome.storage.local.set({ lockedChats: updated, lockedChatTitles });
+      showMsg(actionMsg, `🔒 "${currentChatTitle}" locked!`, false);
 
-    await chrome.storage.local.set({ lockedChats: updated });
-    await updateLockBtnState();
-    await renderLockedList();
+      if (activeTabId) {
+        chrome.tabs.sendMessage(activeTabId, {
+          type: "LOCK_IMMEDIATELY",
+          chatId: currentChatId,
+        }).catch(() => {});
+      }
+
+      await updateLockBtnState();
+      await renderLockedList();
+    }
   });
 
-  // 3. Render Locked Conversations List
+  confirmUnlockBtn.addEventListener("click", async () => {
+    const enteredPin = verifyPinInput.value.trim();
+    if (!enteredPin) {
+      showMsg(actionMsg, "Please enter your Master PIN.", true);
+      return;
+    }
+
+    const { pinHash, salt, lockedChats = [], lockedChatTitles = {} } = await chrome.storage.local.get([
+      "pinHash",
+      "salt",
+      "lockedChats",
+      "lockedChatTitles",
+    ]);
+    const computedHash = await hashPin(enteredPin, salt);
+
+    if (computedHash === pinHash) {
+      const targetId = pendingUnlockTargetId || currentChatId;
+      const updated = lockedChats.filter((id) => id !== targetId);
+      delete lockedChatTitles[targetId];
+
+      await chrome.storage.local.set({ lockedChats: updated, lockedChatTitles });
+
+      showMsg(actionMsg, "🔓 Lock removed successfully.", false);
+      verifyBox.style.display = "none";
+      pendingUnlockTargetId = null;
+
+      if (activeTabId) {
+        chrome.tabs.sendMessage(activeTabId, {
+          type: "UNLOCK_IMMEDIATELY",
+          chatId: targetId,
+        }).catch(() => {});
+      }
+
+      await updateLockBtnState();
+      await renderLockedList();
+    } else {
+      showMsg(actionMsg, "Incorrect Master PIN! Cannot remove lock.", true);
+      verifyPinInput.value = "";
+      verifyPinInput.focus();
+    }
+  });
+
+  cancelUnlockBtn.addEventListener("click", () => {
+    verifyBox.style.display = "none";
+    pendingUnlockTargetId = null;
+  });
+
   async function renderLockedList() {
-    const { lockedChats = [] } = await chrome.storage.local.get("lockedChats");
+    const { lockedChats = [], lockedChatTitles = {} } = await chrome.storage.local.get([
+      "lockedChats",
+      "lockedChatTitles",
+    ]);
     lockedCountEl.textContent = lockedChats.length;
 
     if (lockedChats.length === 0) {
@@ -183,23 +278,26 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     lockedListEl.innerHTML = "";
     lockedChats.forEach((chatId) => {
+      const friendlyName = lockedChatTitles[chatId] || chatId;
       const item = document.createElement("div");
       item.className = "locked-item";
       item.innerHTML = `
-        <span title="${chatId}">${chatId.length > 25 ? chatId.slice(0, 25) + "..." : chatId}</span>
-        <button class="delete-btn" data-id="${chatId}">✕</button>
+        <span title="${chatId}" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 230px;">
+          🔒 ${friendlyName}
+        </span>
+        <button class="delete-btn" data-id="${chatId}" title="Unlock this chat">✕</button>
       `;
       lockedListEl.appendChild(item);
     });
 
     lockedListEl.querySelectorAll(".delete-btn").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
+      btn.addEventListener("click", (e) => {
         const idToRemove = e.target.getAttribute("data-id");
-        const { lockedChats = [] } = await chrome.storage.local.get("lockedChats");
-        const updated = lockedChats.filter((id) => id !== idToRemove);
-        await chrome.storage.local.set({ lockedChats: updated });
-        await updateLockBtnState();
-        await renderLockedList();
+        pendingUnlockTargetId = idToRemove;
+        verifyBox.style.display = "block";
+        verifyPinInput.value = "";
+        verifyPinInput.focus();
+        showMsg(actionMsg, `Enter Master PIN to unlock this conversation`, false);
       });
     });
   }
@@ -209,10 +307,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     element.className = isError ? "message msg-error" : "message msg-success";
     setTimeout(() => {
       element.textContent = "";
-    }, 3000);
+    }, 3500);
   }
 
-  // Initialize
   await refreshPinState();
   await checkActiveTab();
   await renderLockedList();

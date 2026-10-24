@@ -84,7 +84,7 @@
       border-radius: 6px;
       margin-bottom: 10px;
     }
-    input[type="password"], input[type="text"] {
+    input[type="password"] {
       width: 100%;
       background: #0f172a;
       border: 1px solid #334155;
@@ -159,9 +159,23 @@
       color: #ef4444;
       padding: 2px 6px;
       font-size: 12px;
+      cursor: pointer;
     }
-    .delete-btn:hover {
-      color: #f87171;
+
+    /* Verification Modal in Popup */
+    .verify-box {
+      background: #0b1120;
+      border: 1px solid #4f46e5;
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 8px;
+      display: none;
+    }
+    .verify-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: #a5b4fc;
+      margin-bottom: 6px;
     }
   </style>
 </head>
@@ -173,7 +187,6 @@
     </div>
   </div>
 
-  <!-- Master PIN Configuration Section -->
   <div class="card" id="pin-section">
     <div class="card-title">Security PIN Setup</div>
     <div id="pin-setup-form">
@@ -188,18 +201,28 @@
     </div>
   </div>
 
-  <!-- Current Active Tab Action -->
   <div class="card">
     <div class="card-title">Current Conversation</div>
     <div id="current-chat-view">
       <div id="current-chat-status" class="status-badge badge-none">Detecting tab...</div>
+      <div id="current-chat-title" style="font-size: 13px; font-weight: 600; color: #f1f5f9; margin-bottom: 4px; word-break: break-word; display: none;"></div>
       <div id="current-chat-id" class="chat-id-text">No active AI chat open</div>
       <button id="toggle-lock-btn" class="btn-primary" style="display: none;">🔒 Lock This Chat</button>
+      
+      <!-- PIN Verification required to unlock -->
+      <div id="verify-box" class="verify-box">
+        <div class="verify-title">Enter Master PIN to Remove Lock:</div>
+        <input type="password" id="verify-pin-input" placeholder="Enter PIN" maxlength="8" />
+        <div style="display: flex; gap: 6px;">
+          <button id="confirm-unlock-btn" class="btn-danger" style="flex: 1;">Confirm Unlock</button>
+          <button id="cancel-unlock-btn" class="btn-secondary" style="flex: 1; margin: 0;">Cancel</button>
+        </div>
+      </div>
+
       <div id="action-msg" class="message"></div>
     </div>
   </div>
 
-  <!-- Locked Conversations Management -->
   <div class="card">
     <div class="card-title">Locked Conversations (<span id="locked-count">0</span>)</div>
     <div id="locked-list" class="locked-list">
